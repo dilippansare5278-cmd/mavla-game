@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MAVLA: SHADOWS OF THE WADA</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;background:#090806;color:#f8df9a;font-family:Georgia,serif}
+canvas{display:block}
+#hud{position:fixed;inset:0;pointer-events:none}
+.panel{background:linear-gradient(135deg,#160e08dd,#38200add);border:1px solid #b98a39;padding:12px 16px;box-shadow:0 0 18px #0008}
+#brand{position:absolute;top:15px;left:50%;transform:translateX(-50%);text-align:center;text-shadow:0 3px 8px #000}
+#brand h1{font-size:clamp(22px,4vw,42px);margin:0;color:#f5c65c;letter-spacing:5px}
+#brand div{font-size:12px;letter-spacing:4px}
+#stats{position:absolute;top:16px;left:16px;width:220px}
+.bar{height:13px;background:#21150f;border:1px solid #9b7132;margin:5px 0 12px}
+.fill{height:100%;width:100%;background:linear-gradient(90deg,#a82717,#ed6334);transition:width .2s}
+#stamina{background:linear-gradient(90deg,#bd8524,#ffe08a)}
+#mission{position:absolute;top:16px;right:16px;text-align:right}
+#score{position:absolute;left:16px;bottom:20px}
+#controls{position:absolute;right:16px;bottom:18px;text-align:right;font-size:13px;line-height:1.8}
+#message{position:absolute;top:28%;width:100%;text-align:center;font-size:30px;color:#ffda75;text-shadow:0 3px 8px #000}
+#start{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(ellipse,#21180dcc,#070605f5);pointer-events:auto}
+#start .panel{text-align:center;max-width:520px;padding:32px}
+#start h1{font-size:clamp(30px,6vw,58px);margin:0;color:#f5c65c;letter-spacing:4px}
+button{background:linear-gradient(#e9bd5c,#87521b);border:2px solid #ffdf8a;color:#1b1006;padding:13px 30px;font:bold 18px Georgia;cursor:pointer;margin-top:20px}
+#start p{line-height:1.6;color:#e4d1a9}
+#sound{position:absolute;top:120px;right:16px;pointer-events:auto}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div id="brand"><h1>MAVLA</h1><div>SHADOWS OF THE WADA</div></div>
+  <div id="stats" class="panel">
+    <b>WARRIOR</b>
+    <div>HEALTH <span id="hpnum">100</span></div>
+    <div class="bar"><div class="fill" id="hp"></div></div>
+    <div>STAMINA <span id="spnum">100</span></div>
+    <div class="bar"><div class="fill" id="stamina"></div></div>
+  </div>
+  <div id="mission" class="panel">MISSION<br><b>Defend the Wada</b><br>Guardians remaining: <span id="remaining">4</span></div>
+  <button id="sound">? SOUND: ON</button>
+  <div id="score" class="panel">SCORE: <span id="points">0</span><br>TIME: <span id="time">0:00</span></div>
+  <div id="controls" class="panel">
+    <b>CONTROLS</b><br>
+    W A S D / ARROWS — MOVE<br>
+    SHIFT — RUN<br>
+    SPACE / CLICK — ARCADE SLASH<br>
+    P — PAUSE
+  </div>
+  <div id="message"></div>
+</div>
+
+<div id="start">
+ <div class="panel">
+  <h1>MAVLA</h1>
+  <h2>SHADOWS OF THE WADA</h2>
+  <p>A 3D Maratha-era fort adventure.<br>
+  Explore the courtyard, face the guardians and defend the Wada.</p>
+  <p>WASD to move · Shift to run · Space or click to perform an arcade attack.</p>
+  <button id="play">ENTER THE WADA</button>
+ </div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9a7860);
+scene.fog = new THREE.Fog(0x8c725c, 30, 100);
+
+const camera = new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,180);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.15;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffdfb0,0x39302a,2.0));
+const sun=new THREE.DirectionalLight(0xffd6a0,3.1);
+sun.position.set(-18,28,12);
+sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-38;
+sun.shadow.camera.right=38;
+sun.shadow.camera.top=38;
+sun.shadow.camera.bottom=-38;
+scene.add(sun);
+
+const mat=(color,rough=.8,metal=0)=>new THREE.MeshStandardMaterial({color,roughness:rough,metalness:metal});
+const stone=mat(0x827365), darkStone=mat(0x51463c), wood=mat(0x55331c), gold=mat(0xc79a42,.35,.7);
+const saffron=mat(0xc65316), cloth=mat(0x9b2520), skin=mat(0x9c6949), armor=mat(0x33343a,.4,.65);
+const groundMat=mat(0x665b50);
+
+function box(parent,x,y,z,sx,sy,sz,material){
+ const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),material);
+ m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;
+}
+function lathe(parent,points,material,x,y,z,scale=1){
+ const g=new THREE.LatheGeometry(points.map(p=>new THREE.Vector2(p[0],p[1])),16);
+ const m=new THREE.Mesh(g,material);m.position.set(x,y,z);m.scale.setScalar(scale);
+ m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;
+}
+function limb(parent,a,b,r1,r2,material){
+ const A=new THREE.Vector3(...a),B=new THREE.Vector3(...b);
+ const axis=new THREE.Vector3().subVectors(B,A);
+ const g=new THREE.CylinderGeometry(r2,r1,axis.length(),12,4,false);
+ const m=new THREE.Mesh(g,material);
+ m.position.copy(A).add(B).multiplyScalar(.5);
+ m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),axis.normalize());
+ m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;
+}
+function ellipsoid(parent,x,y,z,sx,sy,sz,material){
+ const m=new THREE.Mesh(new THREE.SphereGeometry(1,20,16),material);
+ m.position.set(x,y,z);m.scale.set(sx,sy,sz);
+ m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;
+}
+
+/* Fort courtyard */
+box(scene,0,-.45,0,70,.8,70,groundMat);
+for(let i=-30;i<=30;i+=3){
+ box(scene,i,-.015,0,.045,.02,65,darkStone);
+ box(scene,0,-.014,i,65,.02,.045,darkStone);
+}
+for(let side of [-1,1]){
+ box(scene,side*27,5,0,2,10,65,stone);
+ box(scene,0,5,side*27,65,10,2,stone);
+ for(let i=-24;i<=24;i+=6){
+  box(scene,side*27,10.5,i,3,1.1,3,darkStone);
+  box(scene,i,10.5,side*27,3,1.1,3,darkStone);
+ }
+}
+for(let z=-20;z<=20;z+=8){
+ box(scene,-17,4,z,.8,8,.8,wood);
+ box(scene,17,4,z,.8,8,.8,wood);
+ box(scene,-17,8,z,2,.5,2,gold);
+ box(scene,17,8,z,2,.5,2,gold);
+}
+box(scene,0,7,-26,14,2,2,darkStone);
+box(scene,0,3,-26,14,6,1.5,wood);
+box(scene,-7,3,-26,1,7,2,stone);
+box(scene,7,3,-26,1,7,2,stone);
+for(let i=-5;i<=5;i+=2){
+ box(scene,i,6,-25.5,.2,2,.2,gold);
+}
+
+/* Decorative pillars and fort details */
+for(let x of [-22,-12,12,22]){
+ for(let z of [-20,20]){
+  lathe(scene,[[.7,0],[.65,.4],[.48,.7],[.45,5],[.7,5.3],[.7,5.6]],stone,x,0,z);
+  lathe(scene,[[.8,0],[.8,.25],[.55,.25]],gold,x,5.3,z);
+ }
+}
+for(let i=0;i<9;i++){
+ const x=-24+i*6;
+ box(scene,x,2.5,-25,.3,5,.3,wood);
+ box(scene,x,5.1,-25,2,.2,.2,gold);
+}
+
+/* Torches */
+const torches=[];
+function makeTorch(x,z){
+ const group=new THREE.Group();group.position.set(x,0,z);scene.add(group);
+ limb(group,[0,.1,0],[0,2,0],.09,.09,wood);
+ const flameMat=new THREE.MeshBasicMaterial({color:0xff9b27});
+ const flame=new THREE.Mesh(new THREE.IcosahedronGeometry(.28,2),flameMat);
+ flame.position.y=2.25;flame.scale.set(.7,1.7,.7);group.add(flame);
+ const light=new THREE.PointLight(0xff8a28,3,12,2);
+ light.position.y=2.3;group.add(light);
+ torches.push({flame,light,phase:Math.random()*8});
+}
+for(let x of [-24,-16,16,24]){makeTorch(x,-12);makeTorch(x,12);}
+makeTorch(-8,-24);makeTorch(8,-24);
+
+/* Banners */
+function banner(x,z){
+ const pole=box(scene,x,5,z,.12,10,.12,wood);
+ const flag=new THREE.Mesh(new THREE.PlaneGeometry(2.4,3.6,12,12),
+  new THREE.MeshStandardMaterial({color:0xb53b17,side:THREE.DoubleSide,roughness:.8}));
+ flag.position.set(x+1.2,7.3,z);flag.rotation.y=-.12;
+ scene.add(flag);
+ const emblem=new THREE.Mesh(new THREE.CircleGeometry(.48,24),gold);
+ emblem.position.set(x+1.2,7.4,z+.03);scene.add(emblem);
+}
+banner(-13,-24);banner(13,-24);banner(-25,3);banner(25,3);
+
+/* Procedural detailed human-like warrior model.
+   Organic tapered meshes and layered clothing create a stylized human silhouette. */
+function createWarrior(isEnemy=false){
+ const root=new THREE.Group();
+ const body=new THREE.Group();root.add(body);
+ const uniform=isEnemy?mat(0x4a3028):cloth;
+ const sash=isEnemy?mat(0x75513a):saffron;
+
+ // Legs and boots
+ for(const side of [-1,1]){
+  const hipX=side*.22;
+  limb(body,[hipX,.95,0],[hipX*1.05,.48,.03],.17,.115,uniform);
+  limb(body,[hipX,.48,.03],[hipX,.17,.10],.115,.09,armor);
+  ellipsoid(body,hipX,.12,.2,.14,.12,.28,darkStone);
+  // knee guards
+  ellipsoid(body,hipX,.52,.12,.14,.13,.12,gold);
+ }
+ // Tunic and chest
+ lathe(body,[[.22,.9],[.32,1.1],[.36,1.45],[.31,1.85],[.24,2.02],[.19,2.08]],uniform,0,0,0);
+ lathe(body,[[.2,1.25],[.34,1.32],[.34,1.75],[.25,1.92],[.2,1.9]],armor,0,0,0);
+ // chest plates
+ for(let side of [-1,1]){
+  const plate=ellipsoid(body,side*.14,1.63,.19,.16,.27,.055,gold);
+  plate.rotation.z=side*-.15;
+ }
+ // Belt and waist sash
+ const belt=new THREE.Mesh(new THREE.TorusGeometry(.29,.055,8,32),gold);
+ belt.position.y=1.08;belt.rotation.x=Math.PI/2;body.add(belt);
+ const sashMesh=box(body,0,1.02,.31,.52,.12,.06,sash);
+ sashMesh.rotation.z=-.12;
+ // Shoulders
+ for(let side of [-1,1]){
+  ellipsoid(body,side*.39,1.88,0,.2,.16,.2,armor);
+  ellipsoid(body,side*.4,1.91,.08,.18,.1,.13,gold);
+ }
+ // Neck and head
+ lathe(body,[[.09,1.98],[.11,2.1],[.12,2.25],[.1,2.32]],skin,0,0,0);
+ lathe(body,[[.12,2.17],[.18,2.22],[.2,2.4],[.17,2.58],[.1,2.66],[.03,2.65]],skin,0,0,0);
+ // Ears
+ for(let side of [-1,1])ellipsoid(body,side*.18,2.42,0,.045,.08,.055,skin);
+ // Nose and brows
+ ellipsoid(body,0,2.4,.18,.045,.09,.055,skin);
+ for(let side of [-1,1]){
+  ellipsoid(body,side*.075,2.47,.17,.055,.025,.025,darkStone);
+  ellipsoid(body,side*.07,2.39,.18,.025,.018,.014,mat(0x17120e));
+ }
+ // Moustache
+ for(let side of [-1,1]){
+  const moustache=ellipsoid(body,side*.07,2.31,.19,.09,.035,.035,mat(0x21150e));
+  moustache.rotation.z=side*.25;
+ }
+ // Pheta base and folded cloth
+ const turban=lathe(body,[[.13,2.53],[.2,2.57],[.22,2.66],[.19,2.77],[.12,2.82],[.02,2.8]],saffron,0,0,0);
+ const band=new THREE.Mesh(new THREE.TorusGeometry(.19,.035,8,32),gold);
+ band.position.y=2.64;band.rotation.x=Math.PI/2;body.add(band);
+ const tail=ellipsoid(body,-.16,2.65,-.05,.12,.25,.07,saffron);
+ tail.rotation.z=-.5;
+ // Arms with joints
+ const armPivots=[];
+ for(let side of [-1,1]){
+  const pivot=new THREE.Group();pivot.position.set(side*.4,1.88,0);body.add(pivot);
+  limb(pivot,[0,0,0],[side*.1,-.3,.04],.12,.095,uniform);
+  ellipsoid(pivot,side*.1,-.3,.04,.105,.11,.11,skin);
+  limb(pivot,[side*.1,-.3,.04],[side*.14,-.62,.13],.095,.07,uniform);
+  ellipsoid(pivot,side*.14,-.64,.15,.09,.08,.1,skin);
+  armPivots.push(pivot);
+ }
+ // Decorative curved talwar in right hand
+ const sword=new THREE.Group();sword.position.set(.58,1.24,.2);body.add(sword);
+ const handle=limb(sword,[0,-.15,0],[0,.12,0],.035,.035,wood);
+ const guard=box(sword,0,.1,0,.28,.045,.055,gold);
+ guard.rotation.z=-.12;
+ const bladeShape=new THREE.Shape();
+ bladeShape.moveTo(-.035,.12);bladeShape.lineTo(.04,.12);
+ bladeShape.quadraticCurveTo(.16,.48,.02,.88);
+ bladeShape.quadraticCurveTo(-.01,1.03,-.09,1.1);
+ bladeShape.quadraticCurveTo(-.02,.68,-.035,.12);
+ const blade=new THREE.Mesh(new THREE.ExtrudeGeometry(bladeShape,{depth:.025,bevelEnabled:true,bevelSegments:2,steps:1,bevelSize:.012,bevelThickness:.012}),mat(0xcbd3d5,.2,.9));
+ sword.add(blade);
+ sword.rotation.x=-.25;
+ root.userData={body,armPivots,sword,isEnemy,phase:Math.random()*10};
+ return root;
+}
+
+const player=createWarrior(false);
+scene.add(player);
+player.position.set(0,0,9);
+const enemies=[];
+for(let i=0;i<4;i++){
+ const e=createWarrior(true);
+ e.position.set((i%2?1:-1)*(8+i*2),0,-4-Math.floor(i/2)*8);
+ scene.add(e);
+ enemies.push({mesh:e,hp:100,alive:true,phase:Math.random()*8,attack:0,home:e.position.clone()});
+}
+
+/* Ambient courtyard objects */
+for(let i=0;i<14;i++){
+ const x=(Math.random()-.5)*44,z=(Math.random()-.5)*44;
+ if(Math.abs(x)<5&&z>2)continue;
+ const rubble=new THREE.Mesh(new THREE.DodecahedronGeometry(.25+Math.random()*.35,0),darkStone);
+ rubble.position.set(x,.05,z);rubble.rotation.set(Math.random(),Math.random(),Math.random());
+ rubble.castShadow=true;scene.add(rubble);
+}
+
+/* Audio: generated sound effects and atmospheric drone */
+let audio=null,master=null,drone=null,soundOn=true;
+function initAudio(){
+ if(audio)return;
+ audio=new (window.AudioContext||window.webkitAudioContext)();
+ master=audio.createGain();master.gain.value=.32;master.connect(audio.destination);
+ const osc=audio.createOscillator(),filter=audio.createBiquadFilter(),gain=audio.createGain();
+ osc.type="sawtooth";osc.frequency.value=68;
+ filter.type="lowpass";filter.frequency.value=170;
+ gain.gain.value=.055;
+ osc.connect(filter);filter.connect(gain);gain.connect(master);osc.start();
+ drone=gain;
+}
+function tone(freq,duration,type="sine",volume=.2,slide=0){
+ if(!audio||!soundOn)return;
+ const o=audio.createOscillator(),g=audio.createGain();
+ o.type=type;o.frequency.setValueAtTime(freq,audio.currentTime);
+ if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(30,freq+slide),audio.currentTime+duration);
+ g.gain.setValueAtTime(volume,audio.currentTime);
+ g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+duration);
+ o.connect(g);g.connect(master);o.start();o.stop(audio.currentTime+duration);
+}
+function clash(){tone(720,.12,"triangle",.22,-390);tone(1100,.08,"square",.08,-700)}
+function stepSound(){tone(85,.07,"triangle",.08,-25)}
+function hitSound(){tone(115,.2,"sawtooth",.14,-70);tone(460,.1,"triangle",.08,-250)}
+function victorySound(){tone(520,.3,"sine",.15,150);setTimeout(()=>tone(780,.45,"sine",.13,220),180)}
+
+/* Input */
+const keys={};
+let started=false,paused=false,health=100,stamina=100,score=0,elapsed=0;
+let attackTimer=0,stepTimer=0,invulnerable=0,gameOver=false;
+let yaw=0,mouseDown=false;
+window.addEventListener("keydown",e=>{
+ keys[e.code]=true;
+ if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code))e.preventDefault();
+ if(e.code==="Space"&&started&&!paused)attack();
+ if(e.code==="KeyP"&&started)paused=!paused;
+});
+window.addEventListener("keyup",e=>keys[e.code]=false);
+window.addEventListener("mousedown",()=>{if(started&&!paused)attack();});
+window.addEventListener("mousemove",e=>{
+ if(document.pointerLockElement===renderer.domElement)yaw-=e.movementX*.0025;
+});
+renderer.domElement.addEventListener("click",()=>{
+ if(started&&!paused&&document.pointerLockElement!==renderer.domElement)
+  renderer.domElement.requestPointerLock?.();
+});
+document.getElementById("play").onclick=()=>{
+ initAudio();audio?.resume();started=true;
+ document.getElementById("start").style.display="none";
+};
+document.getElementById("sound").onclick=()=>{
+ soundOn=!soundOn;
+ document.getElementById("sound").textContent="? SOUND: "+(soundOn?"ON":"OFF");
+ if(master)master.gain.value=soundOn?.32:0;
+};
+
+function attack(){
+ if(attackTimer>0||stamina<12||gameOver)return;
+ attackTimer=.62;stamina-=12;
+ clash();
+ const forward=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
+ for(const e of enemies){
+  if(!e.alive)continue;
+  const delta=e.mesh.position.clone().sub(player.position);
+  const distance=delta.length();
+  const direction=delta.normalize();
+  if(distance<3.5&&forward.dot(direction)>.15){
+   e.hp-=50;
+   hitSound();
+   score+=100;
+   if(e.hp<=0){
+    e.alive=false;scene.remove(e.mesh);score+=250;
+    if(enemies.every(q=>!q.alive)){
+     gameOver=true;document.getElementById("message").textContent="VICTORY — THE WADA IS SAFE!";
+     victorySound();
+    }
+   }
+  }
+ }
+}
+
+/* Camera and game loop */
+const clock=new THREE.Clock();
+const cameraTarget=new THREE.Vector3();
+const desiredCamera=new THREE.Vector3();
+function updateHUD(){
+ document.getElementById("hp").style.width=health+"%";
+ document.getElementById("hpnum").textContent=Math.max(0,Math.round(health));
+ document.getElementById("stamina").style.width=stamina+"%";
+ document.getElementById("spnum").textContent=Math.round(stamina);
+ document.getElementById("points").textContent=score;
+ document.getElementById("remaining").textContent=enemies.filter(e=>e.alive).length;
+ document.getElementById("time").textContent=Math.floor(elapsed/60)+":"+String(Math.floor(elapsed%60)).padStart(2,"0");
+}
+function updatePlayer(dt){
+ const moving=keys.KeyW||keys.ArrowUp||keys.KeyS||keys.ArrowDown||keys.KeyA||keys.ArrowLeft||keys.KeyD||keys.ArrowRight;
+ const run=(keys.ShiftLeft||keys.ShiftRight)&&stamina>1;
+ const speed=run?7.4:4.3;
+ if(run&&moving)stamina=Math.max(0,stamina-24*dt);
+ else stamina=Math.min(100,stamina+15*dt);
+ const forward=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
+ const right=new THREE.Vector3(forward.z,0,-forward.x);
+ const dir=new THREE.Vector3();
+ if(keys.KeyW||keys.ArrowUp)dir.add(forward);
+ if(keys.KeyS||keys.ArrowDown)dir.sub(forward);
+ if(keys.KeyD||keys.ArrowRight)dir.add(right);
+ if(keys.KeyA||keys.ArrowLeft)dir.sub(right);
+ if(dir.lengthSq()>0){
+  dir.normalize();
+  player.position.addScaledVector(dir,speed*dt);
+  player.position.x=THREE.MathUtils.clamp(player.position.x,-23,23);
+  player.position.z=THREE.MathUtils.clamp(player.position.z,-23,23);
+  const target=Math.atan2(dir.x,dir.z);
+  player.rotation.y=THREE.MathUtils.euclideanModulo(target-player.rotation.y+Math.PI,Math.PI*2)-Math.PI+player.rotation.y;
+  player.rotation.y=THREE.MathUtils.damp(player.rotation.y,target,8,dt);
+  stepTimer-=dt;
+  if(stepTimer<=0){stepSound();stepTimer=run?.27:.42;}
+ }
+ const bob=moving?Math.sin(elapsed*(run?17:12))*.025:0;
+ player.position.y=bob;
+ const swing=attackTimer>0;
+ player.userData.body.rotation.y=swing?Math.sin((.62-attackTimer)/.62*Math.PI)*.25:0;
+ player.userData.armPivots[1].rotation.x=swing?-Math.sin((.62-attackTimer)/.62*Math.PI)*1.7:0;
+ player.userData.sword.rotation.z=swing?Math.sin((.62-attackTimer)/.62*Math.PI)*-.75:0;
+ attackTimer=Math.max(0,attackTimer-dt);
+ invulnerable=Math.max(0,invulnerable-dt);
+}
+function updateEnemies(dt){
+ for(const e of enemies){
+  if(!e.alive)continue;
+  const mesh=e.mesh;
+  const delta=player.position.clone().sub(mesh.position);
+  const d=delta.length();
+  e.phase+=dt;
+  if(d>3.2){
+   const patrol=d<13?delta.normalize():new THREE.Vector3(Math.sin(e.phase*.6),0,Math.cos(e.phase*.6)).multiplyScalar(.3);
+   mesh.position.addScaledVector(patrol,dt*(d<13?1.5:0.45));
+  }else{
+   e.attack-=dt;
+   if(e.attack<=0&&invulnerable<=0){
+    health=Math.max(0,health-7);
+    invulnerable=.65;e.attack=1.4;
+    hitSound();
+    if(health<=0){
+     gameOver=true;
+     document.getElementById("message").textContent="THE WADA AWAITS YOUR RETURN";
+    }
+   }
+  }
+  if(d>.15){
+   const target=Math.atan2(delta.x,delta.z);
+   mesh.rotation.y=THREE.MathUtils.damp(mesh.rotation.y,target,4,dt);
+  }
+  mesh.userData.body.rotation.x=Math.sin(e.phase*3)*.025;
+  mesh.userData.armPivots[1].rotation.x=d<3.2?Math.sin(e.phase*8)*.45:0;
+ }
+}
+function updateCamera(dt){
+ const offset=new THREE.Vector3(0,5.2,-8.5);
+ offset.applyAxisAngle(new THREE.Vector3(0,1,0),yaw);
+ desiredCamera.copy(player.position).add(offset);
+ camera.position.lerp(desiredCamera,1-Math.exp(-5*dt));
+ cameraTarget.copy(player.position).add(new THREE.Vector3(0,1.7,0));
+ camera.lookAt(cameraTarget);
+}
+function animate(){
+ requestAnimationFrame(animate);
+ const dt=Math.min(clock.getDelta(),.04);
+ if(started&&!paused&&!gameOver){
+  elapsed+=dt;
+  updatePlayer(dt);updateEnemies(dt);updateCamera(dt);updateHUD();
+  for(const t of torches){
+   t.phase+=dt*5;
+   t.flame.scale.y=1.5+Math.sin(t.phase)*.22;
+   t.flame.rotation.z=Math.sin(t.phase*.7)*.18;
+   t.light.intensity=2.6+Math.sin(t.phase*1.4)*.6;
+  }
+ }else if(!started){
+  camera.position.set(0,5,17);camera.lookAt(0,2,0);
+ }
+ if(paused)document.getElementById("message").textContent="PAUSED — PRESS P TO RESUME";
+ else if(!gameOver)document.getElementById("message").textContent="";
+ renderer.render(scene,camera);
+}
+animate();
+
+window.addEventListener("resize",()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
